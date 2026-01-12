@@ -26,6 +26,11 @@ class EventAttendee(TypedDict, total=False):
     name: str
 
 
+class EventOrganizer(TypedDict, total=False):
+    email: str
+    name: str
+
+
 class EventRecord(TypedDict, total=False):
     uid: str
     title: str
@@ -56,6 +61,7 @@ class EventDeletionResult(TypedDict):
 
 
 AttendeeInput = EventAttendee | str
+OrganizerInput = EventOrganizer | str
 
 
 def _escape_ical_text(value: str | Any) -> str:
@@ -152,7 +158,8 @@ def _format_attendees(attendees: list[AttendeeInput]) -> str:
     Format attendees to iCalendar ATTENDEE lines.
 
     Args:
-        attendees: List of email strings or dicts with 'email' and optional 'status'
+        attendees: List of email strings or dicts with 'email', optional 'status',
+            and optional 'name'
             Status can be: 'ACCEPTED', 'DECLINED', 'TENTATIVE', 'NEEDS-ACTION'
 
     Returns:
@@ -188,6 +195,35 @@ def _format_attendees(attendees: list[AttendeeInput]) -> str:
         attendee_lines.append(attendee_line)
 
     return "\n".join(attendee_lines) + "\n" if attendee_lines else ""
+
+
+def _format_organizer(organizer: OrganizerInput | None) -> str:
+    """
+    Format organizer to an iCalendar ORGANIZER line.
+
+    Args:
+        organizer: Email string or dict with 'email' and optional 'name'
+
+    Returns:
+        ORGANIZER line for iCalendar
+    """
+    if not organizer:
+        return ""
+
+    if isinstance(organizer, str):
+        email = organizer.strip()
+        display_name = ""
+    elif isinstance(organizer, dict):
+        email = organizer.get("email", "").strip()
+        display_name = organizer.get("name", "").strip()
+    else:
+        return ""
+
+    if "@" not in email:
+        return ""
+
+    cn_value = _escape_ical_text(display_name or email)
+    return f"ORGANIZER;CN={cn_value}:mailto:{email}\n"
 
 
 def _parse_categories(cats: Any) -> list[str]:
@@ -350,6 +386,7 @@ class CalDAVClient:
         duration_hours: float = 1.0,
         reminders: list[dict] | None = None,
         attendees: list[AttendeeInput] | None = None,
+        organizer: OrganizerInput | None = None,
         categories: list[str] | None = None,
         priority: int | None = None,
         recurrence: dict | None = None,
@@ -369,8 +406,9 @@ class CalDAVClient:
                 - minutes_before: minutes before event
                 - action: 'DISPLAY', 'EMAIL', or 'AUDIO'
                 - description: reminder text (optional)
-            attendees: List of email addresses (str) or dicts with 'email' and 'status'
-                Status can be: 'ACCEPTED', 'DECLINED', 'TENTATIVE', 'NEEDS-ACTION'
+            attendees: List of email addresses (str) or dicts with 'email', optional
+                'name', and optional 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)
+            organizer: Email address (str) or dict with 'email' and optional 'name'
             categories: List of category strings
             priority: Priority 0-9 (0 = highest, 9 = lowest)
             recurrence: Dictionary with recurrence rules:
@@ -453,6 +491,12 @@ END:VALARM
             # Format attendee components
             attendee_components = _format_attendees(attendees) if attendees else ""
 
+            # Format organizer (default to username if it looks like an email)
+            organizer_value = organizer
+            if organizer_value is None and attendees and "@" in self.username:
+                organizer_value = self.username
+            organizer_line = _format_organizer(organizer_value)
+
             # Format categories
             categories_line = _format_categories(categories) if categories else ""
             if categories_line:
@@ -479,7 +523,7 @@ DESCRIPTION:{description_escaped}
 LOCATION:{location_escaped}
 STATUS:CONFIRMED
 SEQUENCE:0
-{priority_line}{categories_line}{rrule_line}{attendee_components}{alarm_components}END:VEVENT
+{priority_line}{categories_line}{rrule_line}{organizer_line}{attendee_components}{alarm_components}END:VEVENT
 END:VCALENDAR"""
 
             # Save event

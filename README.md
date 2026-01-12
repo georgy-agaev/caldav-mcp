@@ -216,7 +216,7 @@ uv run mcp-caldav --caldav-url "https://caldav.example.com/" \
 **Basic Operations:**
 
 - `caldav_list_calendars` - List all available calendars
-- `caldav_create_event` - Create a new calendar event (supports recurrence, categories, priority, attendees)
+- `caldav_create_event` - Create a new calendar event (supports recurrence, categories, priority, attendees, organizer)
 - `caldav_get_events` - Get events for a date range (returns extended fields: UID, categories, priority, attendees, recurrence)
 - `caldav_get_today_events` - Get events for today
 - `caldav_get_week_events` - Get events for the week
@@ -233,6 +233,7 @@ uv run mcp-caldav --caldav-url "https://caldav.example.com/" \
 - Categories/Tags - Organize events with categories
 - Priority - Set priority levels (0-9, 0 = highest)
 - Attendees with statuses - Track acceptance status (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)
+- Organizer support - Set an explicit organizer to preserve attendees on stricter servers
 - Reminders - Multiple reminders per event
 
 ## Development

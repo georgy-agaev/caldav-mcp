@@ -88,7 +88,8 @@ uv run mcp-caldav --caldav-url "https://caldav.example.com/" \
 - `end_time` - Время окончания в формате ISO
 - `duration_hours` - Продолжительность в часах (используется если end_time не указан)
 - `reminders` - Список напоминаний (каждое с minutes_before, action, description)
-- `attendees` - Список email-адресов участников
+- `attendees` - Список email-адресов участников или объектов с `email`, `status`, `name`
+- `organizer` - Email организатора (строка) или объект с `email` и `name`
 - `calendar_index` - Индекс календаря (по умолчанию 0)
 
 ### 3. caldav_get_events

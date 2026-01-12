@@ -154,7 +154,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "attendees": {
                         "type": "array",
-                        "description": "List of attendee email addresses (strings) or objects with 'email' and 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)",
+                        "description": "List of attendee email addresses (strings) or objects with 'email', optional 'name', and 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)",
                         "items": {
                             "oneOf": [
                                 {"type": "string"},
@@ -162,6 +162,7 @@ async def list_tools() -> list[Tool]:
                                     "type": "object",
                                     "properties": {
                                         "email": {"type": "string"},
+                                        "name": {"type": "string"},
                                         "status": {
                                             "type": "string",
                                             "enum": [
@@ -176,6 +177,20 @@ async def list_tools() -> list[Tool]:
                                 },
                             ]
                         },
+                    },
+                    "organizer": {
+                        "description": "Organizer email address (string) or object with 'email' and optional 'name'",
+                        "oneOf": [
+                            {"type": "string"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "email": {"type": "string"},
+                                    "name": {"type": "string"},
+                                },
+                                "required": ["email"],
+                            },
+                        ],
                     },
                     "categories": {
                         "type": "array",
@@ -419,6 +434,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             duration_hours = arguments.get("duration_hours", 1.0)
             reminders = arguments.get("reminders")
             attendees = arguments.get("attendees")
+            organizer = arguments.get("organizer")
             categories = arguments.get("categories")
             priority = arguments.get("priority")
             recurrence = arguments.get("recurrence")
@@ -457,6 +473,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 duration_hours=duration_hours,
                 reminders=reminders,
                 attendees=attendees,
+                organizer=organizer,
                 categories=categories,
                 priority=priority,
                 recurrence=recurrence,

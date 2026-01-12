@@ -217,6 +217,7 @@ def test_caldav_client_create_event_with_attendees(mock_dav_client):
     assert "ATTENDEE" in saved_event
     assert "attendee1@example.com" in saved_event
     assert "attendee2@example.com" in saved_event
+    assert "ORGANIZER" in saved_event
 
 
 # Helper function tests
