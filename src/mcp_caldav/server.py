@@ -245,6 +245,136 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="caldav_update_event",
+            description="Update an existing event by UID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "uid": {
+                        "type": "string",
+                        "description": "Event UID to update",
+                    },
+                    "calendar_index": {
+                        "type": "integer",
+                        "description": "Index of the calendar (default: 0)",
+                        "default": 0,
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Event title",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Event description",
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "Event location",
+                    },
+                    "start_time": {
+                        "type": "string",
+                        "description": "Start time in ISO format (e.g., '2025-01-20T14:00:00')",
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "End time in ISO format (e.g., '2025-01-20T15:00:00')",
+                    },
+                    "duration_hours": {
+                        "type": "number",
+                        "description": "Duration in hours (used if end_time not provided)",
+                    },
+                    "attendees": {
+                        "type": "array",
+                        "description": "List of attendee email addresses (strings) or objects with 'email', optional 'name', and 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "email": {"type": "string"},
+                                        "name": {"type": "string"},
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "ACCEPTED",
+                                                "DECLINED",
+                                                "TENTATIVE",
+                                                "NEEDS-ACTION",
+                                            ],
+                                        },
+                                    },
+                                    "required": ["email"],
+                                },
+                            ]
+                        },
+                    },
+                    "organizer": {
+                        "description": "Organizer email address (string) or object with 'email' and optional 'name'",
+                        "oneOf": [
+                            {"type": "string"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "email": {"type": "string"},
+                                    "name": {"type": "string"},
+                                },
+                                "required": ["email"],
+                            },
+                        ],
+                    },
+                    "categories": {
+                        "type": "array",
+                        "description": "List of category/tag strings",
+                        "items": {"type": "string"},
+                    },
+                    "priority": {
+                        "type": "integer",
+                        "description": "Priority 0-9 (0 = highest, 9 = lowest)",
+                        "minimum": 0,
+                        "maximum": 9,
+                    },
+                    "recurrence": {
+                        "type": "object",
+                        "description": "Recurrence rule for repeating events",
+                        "properties": {
+                            "frequency": {
+                                "type": "string",
+                                "enum": ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"],
+                                "description": "How often the event repeats",
+                            },
+                            "interval": {
+                                "type": "integer",
+                                "description": "Interval between occurrences (default: 1)",
+                                "default": 1,
+                            },
+                            "count": {
+                                "type": "integer",
+                                "description": "Number of occurrences",
+                            },
+                            "until": {
+                                "type": "string",
+                                "description": "End date in ISO format",
+                            },
+                            "byday": {
+                                "type": "string",
+                                "description": "Days of week (e.g., 'MO,WE,FR' for Monday, Wednesday, Friday)",
+                            },
+                            "bymonthday": {
+                                "type": "integer",
+                                "description": "Day of month (1-31)",
+                            },
+                            "bymonth": {
+                                "type": "integer",
+                                "description": "Month (1-12)",
+                            },
+                        },
+                    },
+                },
+                "required": ["uid"],
+            },
+        ),
+        Tool(
             name="caldav_get_event_by_uid",
             description="Get a specific event by its UID",
             inputSchema={
@@ -472,6 +602,66 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 end_time=end_time,
                 duration_hours=duration_hours,
                 reminders=reminders,
+                attendees=attendees,
+                organizer=organizer,
+                categories=categories,
+                priority=priority,
+                recurrence=recurrence,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2, ensure_ascii=False),
+                )
+            ]
+
+        elif name == "caldav_update_event":
+            uid = arguments.get("uid")
+            calendar_index = arguments.get("calendar_index", 0)
+            title = arguments.get("title")
+            description = arguments.get("description")
+            location = arguments.get("location")
+            start_time_str = arguments.get("start_time")
+            end_time_str = arguments.get("end_time")
+            duration_hours = arguments.get("duration_hours")
+            attendees = arguments.get("attendees")
+            organizer = arguments.get("organizer")
+            categories = arguments.get("categories")
+            priority = arguments.get("priority")
+            recurrence = arguments.get("recurrence")
+
+            start_time = None
+            if start_time_str:
+                start_time = datetime.fromisoformat(
+                    start_time_str.replace("Z", "+00:00")
+                )
+
+            end_time = None
+            if end_time_str:
+                end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+
+            if recurrence and recurrence.get("until"):
+                until_str = recurrence["until"]
+                try:
+                    recurrence["until"] = datetime.fromisoformat(
+                        until_str.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    from contextlib import suppress
+
+                    with suppress(ValueError):
+                        recurrence["until"] = datetime.fromisoformat(until_str).date()
+
+            result = ctx.client.update_event(
+                uid=uid,
+                calendar_index=calendar_index,
+                title=title,
+                description=description,
+                location=location,
+                start_time=start_time,
+                end_time=end_time,
+                duration_hours=duration_hours,
                 attendees=attendees,
                 organizer=organizer,
                 categories=categories,

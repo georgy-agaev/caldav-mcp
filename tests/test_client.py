@@ -220,6 +220,64 @@ def test_caldav_client_create_event_with_attendees(mock_dav_client):
     assert "ORGANIZER" in saved_event
 
 
+@patch("mcp_caldav.client.caldav.DAVClient")
+def test_caldav_client_update_event(mock_dav_client):
+    """Test updating an event with attendees and organizer."""
+    from icalendar import Event
+
+    mock_client_instance = MagicMock()
+    mock_principal = MagicMock()
+    mock_calendar = MagicMock()
+    mock_calendar.name = "Test Calendar"
+    mock_principal.calendars.return_value = [mock_calendar]
+    mock_client_instance.principal.return_value = mock_principal
+    mock_dav_client.return_value = mock_client_instance
+
+    client = CalDAVClient(
+        url="https://caldav.yandex.ru/",
+        username="test@example.com",
+        password="test-password",
+    )
+    client.connect()
+
+    event_component = Event()
+    event_component.add("UID", "test-uid")
+    event_component.add("SUMMARY", "Old Title")
+    event_component.add("DTSTART", datetime(2025, 1, 20, 14, 0))
+    event_component.add("DTEND", datetime(2025, 1, 20, 15, 0))
+
+    class DummyEvent:
+        def __init__(self, component):
+            self.icalendar_component = component
+            self.save_called = False
+            self.save_kwargs = None
+
+        def save(self, **kwargs):
+            self.save_called = True
+            self.save_kwargs = kwargs
+            return self
+
+    dummy_event = DummyEvent(event_component)
+    mock_calendar.date_search.return_value = [dummy_event]
+
+    result = client.update_event(
+        uid="test-uid",
+        calendar_index=0,
+        title="Updated Title",
+        attendees=[{"email": "attendee@example.com", "status": "NEEDS-ACTION"}],
+        organizer={"email": "organizer@example.com"},
+    )
+
+    assert result["success"] is True
+    assert dummy_event.save_called is True
+    assert dummy_event.save_kwargs["increase_seqno"] is True
+
+    updated_component = dummy_event.icalendar_component
+    assert str(updated_component.get("SUMMARY")) == "Updated Title"
+    assert updated_component.get("ATTENDEE") is not None
+    assert updated_component.get("ORGANIZER") is not None
+
+
 # Helper function tests
 
 

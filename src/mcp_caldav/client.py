@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 try:
     import caldav
+    from icalendar import vCalAddress, vText
 except ImportError as err:
     raise ImportError(
         "caldav library is not installed. Install it with: pip install caldav"
@@ -46,6 +47,15 @@ class EventRecord(TypedDict, total=False):
 
 
 class EventCreationResult(TypedDict):
+    success: bool
+    uid: str
+    title: str
+    start_time: str
+    end_time: str
+    calendar: str
+
+
+class EventUpdateResult(TypedDict):
     success: bool
     uid: str
     title: str
@@ -226,6 +236,49 @@ def _format_organizer(organizer: OrganizerInput | None) -> str:
     return f"ORGANIZER;CN={cn_value}:mailto:{email}\n"
 
 
+def _build_attendee_cal_address(attendee: AttendeeInput) -> vCalAddress | None:
+    if isinstance(attendee, str):
+        email = attendee.strip()
+        status = None
+        display_name = ""
+    elif isinstance(attendee, dict):
+        email = attendee.get("email", "").strip()
+        status = attendee.get("status", "").upper()
+        display_name = attendee.get("name", "").strip()
+    else:
+        return None
+
+    if "@" not in email:
+        return None
+
+    cal_address = vCalAddress(f"mailto:{email}")
+    if display_name:
+        cal_address.params["CN"] = vText(display_name)
+    cal_address.params["RSVP"] = vText("TRUE")
+    if status and status in ["ACCEPTED", "DECLINED", "TENTATIVE", "NEEDS-ACTION"]:
+        cal_address.params["PARTSTAT"] = vText(status)
+    return cal_address
+
+
+def _build_organizer_cal_address(organizer: OrganizerInput) -> vCalAddress | None:
+    if isinstance(organizer, str):
+        email = organizer.strip()
+        display_name = ""
+    elif isinstance(organizer, dict):
+        email = organizer.get("email", "").strip()
+        display_name = organizer.get("name", "").strip()
+    else:
+        return None
+
+    if "@" not in email:
+        return None
+
+    cal_address = vCalAddress(f"mailto:{email}")
+    if display_name:
+        cal_address.params["CN"] = vText(display_name)
+    return cal_address
+
+
 def _parse_categories(cats: Any) -> list[str]:
     """
     Parse categories from iCalendar component.
@@ -315,6 +368,38 @@ def _parse_attendees(ical_component: Any) -> list[EventAttendee]:
             continue
 
     return attendees
+
+
+def _parse_organizer(ical_component: Any) -> EventOrganizer | None:
+    """
+    Parse organizer from iCalendar component.
+
+    Args:
+        ical_component: iCalendar component
+
+    Returns:
+        Organizer dictionary with 'email' and optional 'name'
+    """
+    organizer = ical_component.get("ORGANIZER")
+    if not organizer:
+        return None
+
+    email = str(organizer).replace("mailto:", "").strip()
+    if not email:
+        return None
+
+    name = ""
+    if hasattr(organizer, "params"):
+        cn = organizer.params.get("CN")
+        if isinstance(cn, list) and cn:
+            name = str(cn[0])
+        elif isinstance(cn, str):
+            name = cn
+
+    result: EventOrganizer = {"email": email}
+    if name:
+        result["name"] = name
+    return result
 
 
 class CalDAVClient:
@@ -540,6 +625,167 @@ END:VCALENDAR"""
 
         except Exception as e:
             raise RuntimeError(f"Failed to create event: {e}") from e
+
+    def update_event(
+        self,
+        uid: str,
+        calendar_index: int = 0,
+        title: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        duration_hours: float | None = None,
+        attendees: list[AttendeeInput] | None = None,
+        organizer: OrganizerInput | None = None,
+        categories: list[str] | None = None,
+        priority: int | None = None,
+        recurrence: dict | None = None,
+    ) -> EventUpdateResult:
+        """
+        Update an existing event in the calendar.
+
+        Args:
+            uid: Event UID to update
+            calendar_index: Calendar index (default: 0)
+            title: Updated event title (optional)
+            description: Updated event description (optional)
+            location: Updated event location (optional)
+            start_time: Updated start time (optional)
+            end_time: Updated end time (optional)
+            duration_hours: Duration in hours (used if end_time not provided)
+            attendees: List of email addresses (str) or dicts with 'email', optional
+                'name', and optional 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)
+            organizer: Email address (str) or dict with 'email' and optional 'name'
+            categories: List of category strings
+            priority: Priority 0-9 (0 = highest, 9 = lowest)
+            recurrence: Dictionary with recurrence rules
+
+        Returns:
+            Event update metadata
+        """
+        if not self.principal:
+            raise RuntimeError("Not connected to CalDAV server. Call connect() first.")
+
+        try:
+            calendars = self.principal.calendars()
+            if calendar_index >= len(calendars):
+                raise ValueError(
+                    f"Calendar index {calendar_index} not found. "
+                    f"Available calendars: {len(calendars)}"
+                )
+
+            calendar = calendars[calendar_index]
+
+            start_date = datetime.now() - timedelta(days=365)
+            end_date = datetime.now() + timedelta(days=365)
+            events = calendar.date_search(start=start_date, end=end_date)
+
+            target_event = None
+            for event in events:
+                try:
+                    ical_component = event.icalendar_component
+                    event_uid = str(ical_component.get("UID", ""))
+                    if event_uid == uid:
+                        target_event = event
+                        break
+                except Exception:
+                    continue
+
+            if not target_event:
+                raise ValueError(f"Event with UID {uid} not found.")
+
+            ical_component = target_event.icalendar_component
+
+            if title is not None:
+                ical_component["SUMMARY"] = title
+            if description is not None:
+                ical_component["DESCRIPTION"] = description
+            if location is not None:
+                ical_component["LOCATION"] = location
+
+            if (
+                start_time is not None
+                or end_time is not None
+                or duration_hours is not None
+            ):
+                existing_dtstart = ical_component.get("DTSTART")
+                existing_dtend = ical_component.get("DTEND")
+                existing_start = existing_dtstart.dt if existing_dtstart else None
+                existing_end = existing_dtend.dt if existing_dtend else None
+
+                new_start = start_time if start_time is not None else existing_start
+                if new_start is None:
+                    raise ValueError("Event start time is required to update timing.")
+
+                if end_time is not None:
+                    new_end = end_time
+                elif duration_hours is not None:
+                    new_end = new_start + timedelta(hours=duration_hours)
+                elif existing_start and existing_end:
+                    new_end = new_start + (existing_end - existing_start)
+                else:
+                    new_end = new_start + timedelta(hours=1)
+
+                ical_component["DTSTART"] = new_start
+                ical_component["DTEND"] = new_end
+
+            if categories is not None:
+                ical_component.pop("CATEGORIES", None)
+                if categories:
+                    ical_component.add("CATEGORIES", categories)
+
+            if priority is not None:
+                ical_component["PRIORITY"] = int(priority)
+
+            if recurrence is not None:
+                ical_component.pop("RRULE", None)
+                if recurrence:
+                    rrule_value = _format_rrule(recurrence)
+                    if rrule_value.startswith("RRULE:"):
+                        rrule_value = rrule_value[len("RRULE:") :]
+                    if rrule_value:
+                        ical_component.add("RRULE", rrule_value)
+
+            if attendees is not None:
+                ical_component.pop("ATTENDEE", None)
+                for attendee in attendees:
+                    cal_address = _build_attendee_cal_address(attendee)
+                    if cal_address:
+                        ical_component.add("ATTENDEE", cal_address)
+
+            existing_organizer = _parse_organizer(ical_component)
+            if organizer is not None:
+                ical_component.pop("ORGANIZER", None)
+                organizer_address = _build_organizer_cal_address(organizer)
+                if not organizer_address:
+                    raise ValueError("Organizer must be a valid email address.")
+                ical_component.add("ORGANIZER", organizer_address)
+            elif attendees is not None and not existing_organizer:
+                organizer_address = _build_organizer_cal_address(self.username)
+                if organizer_address:
+                    ical_component.add("ORGANIZER", organizer_address)
+
+            ical_component["DTSTAMP"] = datetime.utcnow()
+            target_event.icalendar_component = ical_component
+            target_event.save(increase_seqno=True)
+
+            updated_start = ical_component.get("DTSTART")
+            updated_end = ical_component.get("DTEND")
+            start_value = updated_start.dt if updated_start else None
+            end_value = updated_end.dt if updated_end else None
+
+            return {
+                "success": True,
+                "uid": uid,
+                "title": str(ical_component.get("SUMMARY", "")),
+                "start_time": start_value.isoformat() if start_value else "",
+                "end_time": end_value.isoformat() if end_value else "",
+                "calendar": calendar.name,
+            }
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to update event: {e}") from e
 
     def get_events(
         self,

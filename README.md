@@ -224,6 +224,7 @@ uv run mcp-caldav --caldav-url "https://caldav.example.com/" \
 **Advanced Operations:**
 
 - `caldav_get_event_by_uid` - Get a specific event by its UID
+- `caldav_update_event` - Update an event by UID
 - `caldav_delete_event` - Delete an event by UID
 - `caldav_search_events` - Search events by text, attendees, or location
 

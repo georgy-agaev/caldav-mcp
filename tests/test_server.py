@@ -111,6 +111,7 @@ async def test_list_tools_with_client(app_context):
         tool_names = [tool.name for tool in tools]
         assert "caldav_list_calendars" in tool_names
         assert "caldav_create_event" in tool_names
+        assert "caldav_update_event" in tool_names
         assert "caldav_get_events" in tool_names
         assert "caldav_get_today_events" in tool_names
         assert "caldav_get_week_events" in tool_names
@@ -190,6 +191,42 @@ async def test_call_tool_create_event_with_datetime(app_context):
         # Check that create_event was called with datetime objects
         call_kwargs = app_context.client.create_event.call_args[1]
         assert call_kwargs["title"] == "Test Event"
+        assert call_kwargs["start_time"] is not None
+        assert call_kwargs["end_time"] is not None
+
+
+@pytest.mark.anyio
+async def test_call_tool_update_event(app_context):
+    """Test calling caldav_update_event tool."""
+    from .conftest import mock_request_context
+
+    app_context.client.update_event.return_value = {
+        "success": True,
+        "uid": "test-uid",
+        "title": "Updated Event",
+        "start_time": "2025-01-20T14:00:00",
+        "end_time": "2025-01-20T15:00:00",
+        "calendar": "Test Calendar",
+    }
+
+    with mock_request_context(app_context):
+        result = await call_tool(
+            "caldav_update_event",
+            {
+                "uid": "test-uid",
+                "title": "Updated Event",
+                "start_time": "2025-01-20T14:00:00",
+                "end_time": "2025-01-20T15:00:00",
+            },
+        )
+
+        assert len(result) == 1
+        data = json.loads(result[0].text)
+        assert data["success"] is True
+
+        call_kwargs = app_context.client.update_event.call_args[1]
+        assert call_kwargs["uid"] == "test-uid"
+        assert call_kwargs["title"] == "Updated Event"
         assert call_kwargs["start_time"] is not None
         assert call_kwargs["end_time"] is not None
 
