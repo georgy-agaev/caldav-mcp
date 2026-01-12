@@ -13,6 +13,7 @@ from mcp_caldav.client import (
     _format_rrule,
     _parse_attendees,
     _parse_categories,
+    _parse_reminders,
 )
 
 
@@ -303,6 +304,26 @@ def test_escape_ical_text():
     )
     assert _escape_ical_text("") == ""
     assert _escape_ical_text(123) == "123"  # Non-string input
+
+
+def test_parse_reminders():
+    """Test parsing reminders from VALARM components."""
+    from icalendar import Alarm, Event
+
+    event = Event()
+    event.add("DTSTART", datetime(2025, 1, 20, 14, 0))
+
+    alarm = Alarm()
+    alarm.add("ACTION", "DISPLAY")
+    alarm.add("TRIGGER", timedelta(minutes=-15))
+    alarm.add("DESCRIPTION", "Reminder")
+    event.add_component(alarm)
+
+    reminders = _parse_reminders(event)
+    assert len(reminders) == 1
+    assert reminders[0]["minutes_before"] == 15
+    assert reminders[0]["action"] == "DISPLAY"
+    assert reminders[0]["description"] == "Reminder"
 
 
 def test_format_rrule():

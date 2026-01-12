@@ -1,6 +1,7 @@
 """CalDAV client for calendar operations."""
 
 from datetime import date, datetime, timedelta
+import re
 from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
@@ -32,6 +33,13 @@ class EventOrganizer(TypedDict, total=False):
     name: str
 
 
+class EventReminder(TypedDict, total=False):
+    minutes_before: int
+    action: str
+    description: str
+    email_to: str
+
+
 class EventRecord(TypedDict, total=False):
     uid: str
     title: str
@@ -44,6 +52,7 @@ class EventRecord(TypedDict, total=False):
     priority: int | None
     recurrence: str | None
     attendees: list[EventAttendee]
+    reminders: list[EventReminder]
 
 
 class EventCreationResult(TypedDict):
@@ -312,6 +321,97 @@ def _replace_alarm_components(
             alarm.add("DESCRIPTION", description_text)
 
         ical_component.add_component(alarm)
+
+
+def _parse_duration_to_minutes(value: str) -> int | None:
+    if not value:
+        return None
+
+    duration = value.strip()
+    if duration.startswith(("+", "-")):
+        duration = duration[1:]
+
+    match = re.match(
+        r"^P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?"
+        r"(?:(?P<seconds>\d+)S)?)?$",
+        duration,
+    )
+    if not match:
+        return None
+
+    days = int(match.group("days") or 0)
+    hours = int(match.group("hours") or 0)
+    minutes = int(match.group("minutes") or 0)
+    seconds = int(match.group("seconds") or 0)
+    total_seconds = days * 86400 + hours * 3600 + minutes * 60 + seconds
+    if total_seconds <= 0:
+        return None
+    return int(total_seconds // 60)
+
+
+def _parse_trigger_minutes(trigger: Any, dtstart: Any) -> int | None:
+    if trigger is None:
+        return None
+
+    trigger_value = trigger.dt if hasattr(trigger, "dt") else trigger
+
+    if isinstance(trigger_value, timedelta):
+        return int(abs(trigger_value.total_seconds()) // 60)
+
+    if isinstance(trigger_value, datetime):
+        if not dtstart:
+            return None
+        if isinstance(dtstart, date) and not isinstance(dtstart, datetime):
+            dtstart = datetime.combine(dtstart, datetime.min.time())
+        try:
+            delta = dtstart - trigger_value
+        except Exception:
+            return None
+        return int(abs(delta.total_seconds()) // 60)
+
+    if isinstance(trigger_value, str):
+        return _parse_duration_to_minutes(trigger_value)
+
+    return None
+
+
+def _parse_reminders(ical_component: Any) -> list[EventReminder]:
+    reminders: list[EventReminder] = []
+    dtstart = ical_component.get("DTSTART")
+    dtstart_value = dtstart.dt if dtstart else None
+
+    subcomponents = getattr(ical_component, "subcomponents", [])
+    for component in subcomponents:
+        if getattr(component, "name", "") != "VALARM":
+            continue
+
+        action = str(component.get("ACTION", "")).upper()
+        trigger = component.get("TRIGGER")
+        minutes_before = _parse_trigger_minutes(trigger, dtstart_value)
+
+        reminder: EventReminder = {}
+        if action:
+            reminder["action"] = action
+        if minutes_before is not None:
+            reminder["minutes_before"] = minutes_before
+
+        description = component.get("DESCRIPTION") or component.get("SUMMARY")
+        if description:
+            reminder["description"] = str(description)
+
+        if action == "EMAIL":
+            attendee = component.get("ATTENDEE")
+            if isinstance(attendee, list) and attendee:
+                attendee = attendee[0]
+            if attendee:
+                email_to = str(attendee).replace("mailto:", "").strip()
+                if email_to:
+                    reminder["email_to"] = email_to
+
+        if reminder:
+            reminders.append(reminder)
+
+    return reminders
 
 
 def _parse_categories(cats: Any) -> list[str]:
@@ -932,6 +1032,7 @@ END:VCALENDAR"""
 
                     # Extract attendees
                     attendees = _parse_attendees(ical_component)
+                    reminders = _parse_reminders(ical_component)
 
                     result.append(
                         {
@@ -946,6 +1047,7 @@ END:VCALENDAR"""
                             "priority": priority_value,
                             "recurrence": recurrence,
                             "attendees": attendees,
+                            "reminders": reminders,
                         }
                     )
 
@@ -1067,6 +1169,7 @@ END:VCALENDAR"""
                         recurrence = str(rrule) if rrule else None
 
                         attendees = _parse_attendees(ical_component)
+                        reminders = _parse_reminders(ical_component)
 
                         return {
                             "uid": uid,
@@ -1080,6 +1183,7 @@ END:VCALENDAR"""
                             "priority": priority_value,
                             "recurrence": recurrence,
                             "attendees": attendees,
+                            "reminders": reminders,
                         }
                 except Exception:
                     continue
