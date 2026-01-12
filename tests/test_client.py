@@ -264,6 +264,7 @@ def test_caldav_client_update_event(mock_dav_client):
         uid="test-uid",
         calendar_index=0,
         title="Updated Title",
+        reminders=[{"minutes_before": 10, "action": "DISPLAY", "description": "Ping"}],
         attendees=[{"email": "attendee@example.com", "status": "NEEDS-ACTION"}],
         organizer={"email": "organizer@example.com"},
     )
@@ -274,6 +275,14 @@ def test_caldav_client_update_event(mock_dav_client):
 
     updated_component = dummy_event.icalendar_component
     assert str(updated_component.get("SUMMARY")) == "Updated Title"
+    alarms = [
+        component
+        for component in updated_component.subcomponents
+        if component.name == "VALARM"
+    ]
+    assert len(alarms) == 1
+    assert str(alarms[0].get("ACTION")) == "DISPLAY"
+    assert "PT10M" in str(alarms[0].get("TRIGGER"))
     assert updated_component.get("ATTENDEE") is not None
     assert updated_component.get("ORGANIZER") is not None
 

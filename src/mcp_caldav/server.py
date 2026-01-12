@@ -283,6 +283,24 @@ async def list_tools() -> list[Tool]:
                         "type": "number",
                         "description": "Duration in hours (used if end_time not provided)",
                     },
+                    "reminders": {
+                        "type": "array",
+                        "description": "List of reminders. Each reminder is an object with: "
+                        "minutes_before (integer), action ('DISPLAY', 'EMAIL', or 'AUDIO'), "
+                        "and optional description (string)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "minutes_before": {"type": "integer"},
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["DISPLAY", "EMAIL", "AUDIO"],
+                                },
+                                "description": {"type": "string"},
+                            },
+                            "required": ["minutes_before", "action"],
+                        },
+                    },
                     "attendees": {
                         "type": "array",
                         "description": "List of attendee email addresses (strings) or objects with 'email', optional 'name', and 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)",
@@ -625,6 +643,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             start_time_str = arguments.get("start_time")
             end_time_str = arguments.get("end_time")
             duration_hours = arguments.get("duration_hours")
+            reminders = arguments.get("reminders")
             attendees = arguments.get("attendees")
             organizer = arguments.get("organizer")
             categories = arguments.get("categories")
@@ -662,6 +681,7 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
                 start_time=start_time,
                 end_time=end_time,
                 duration_hours=duration_hours,
+                reminders=reminders,
                 attendees=attendees,
                 organizer=organizer,
                 categories=categories,

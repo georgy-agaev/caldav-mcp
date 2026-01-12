@@ -217,6 +217,7 @@ async def test_call_tool_update_event(app_context):
                 "title": "Updated Event",
                 "start_time": "2025-01-20T14:00:00",
                 "end_time": "2025-01-20T15:00:00",
+                "reminders": [{"minutes_before": 10, "action": "DISPLAY"}],
             },
         )
 
@@ -229,6 +230,7 @@ async def test_call_tool_update_event(app_context):
         assert call_kwargs["title"] == "Updated Event"
         assert call_kwargs["start_time"] is not None
         assert call_kwargs["end_time"] is not None
+        assert call_kwargs["reminders"] == [{"minutes_before": 10, "action": "DISPLAY"}]
 
 
 @pytest.mark.anyio

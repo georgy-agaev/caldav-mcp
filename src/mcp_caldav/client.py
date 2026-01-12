@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 try:
     import caldav
-    from icalendar import vCalAddress, vText
+    from icalendar import Alarm, vCalAddress, vText
 except ImportError as err:
     raise ImportError(
         "caldav library is not installed. Install it with: pip install caldav"
@@ -277,6 +277,41 @@ def _build_organizer_cal_address(organizer: OrganizerInput) -> vCalAddress | Non
     if display_name:
         cal_address.params["CN"] = vText(display_name)
     return cal_address
+
+
+def _replace_alarm_components(
+    ical_component: Any, reminders: list[dict], summary: str
+) -> None:
+    if not hasattr(ical_component, "subcomponents"):
+        return
+
+    ical_component.subcomponents = [
+        component
+        for component in ical_component.subcomponents
+        if getattr(component, "name", "") != "VALARM"
+    ]
+
+    for reminder in reminders:
+        minutes_before = reminder.get("minutes_before", 15)
+        action = reminder.get("action", "DISPLAY").upper()
+        description_text = reminder.get("description", summary)
+
+        alarm = Alarm()
+        alarm.add("ACTION", action)
+        alarm.add("TRIGGER", f"-PT{minutes_before}M")
+
+        if action == "DISPLAY":
+            alarm.add("DESCRIPTION", description_text)
+        elif action == "EMAIL":
+            alarm.add("SUMMARY", summary)
+            alarm.add("DESCRIPTION", description_text)
+            email_to = reminder.get("email_to", "")
+            if email_to:
+                alarm.add("ATTENDEE", vCalAddress(f"mailto:{email_to}"))
+        elif action == "AUDIO":
+            alarm.add("DESCRIPTION", description_text)
+
+        ical_component.add_component(alarm)
 
 
 def _parse_categories(cats: Any) -> list[str]:
@@ -636,6 +671,7 @@ END:VCALENDAR"""
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         duration_hours: float | None = None,
+        reminders: list[dict] | None = None,
         attendees: list[AttendeeInput] | None = None,
         organizer: OrganizerInput | None = None,
         categories: list[str] | None = None,
@@ -654,6 +690,10 @@ END:VCALENDAR"""
             start_time: Updated start time (optional)
             end_time: Updated end time (optional)
             duration_hours: Duration in hours (used if end_time not provided)
+            reminders: List of reminder dictionaries with keys:
+                - minutes_before: minutes before event
+                - action: 'DISPLAY', 'EMAIL', or 'AUDIO'
+                - description: reminder text (optional)
             attendees: List of email addresses (str) or dicts with 'email', optional
                 'name', and optional 'status' (ACCEPTED/DECLINED/TENTATIVE/NEEDS-ACTION)
             organizer: Email address (str) or dict with 'email' and optional 'name'
@@ -729,6 +769,10 @@ END:VCALENDAR"""
 
                 ical_component["DTSTART"] = new_start
                 ical_component["DTEND"] = new_end
+
+            if reminders is not None:
+                summary_value = str(ical_component.get("SUMMARY", ""))
+                _replace_alarm_components(ical_component, reminders, summary_value)
 
             if categories is not None:
                 ical_component.pop("CATEGORIES", None)
