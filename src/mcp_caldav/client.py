@@ -298,7 +298,7 @@ def _replace_alarm_components(
 
         alarm = Alarm()
         alarm.add("ACTION", action)
-        alarm.add("TRIGGER", f"-PT{minutes_before}M")
+        alarm.add("TRIGGER", timedelta(minutes=-minutes_before))
 
         if action == "DISPLAY":
             alarm.add("DESCRIPTION", description_text)

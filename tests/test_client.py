@@ -1,6 +1,6 @@
 """Unit tests for CalDAV client."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -282,7 +282,7 @@ def test_caldav_client_update_event(mock_dav_client):
     ]
     assert len(alarms) == 1
     assert str(alarms[0].get("ACTION")) == "DISPLAY"
-    assert "PT10M" in str(alarms[0].get("TRIGGER"))
+    assert alarms[0].get("TRIGGER").dt == timedelta(minutes=-10)
     assert updated_component.get("ATTENDEE") is not None
     assert updated_component.get("ORGANIZER") is not None
 
